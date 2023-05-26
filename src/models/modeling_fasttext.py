@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional
 
 import torch
 from torch import Tensor
@@ -14,12 +14,17 @@ class FasttextEmbedding(torch.nn.EmbeddingBag):
                          mode="sum",
                          padding_idx=pad_token_id,
                          **kwargs)
-        self.vocab = vocab
-        self.ngrams = ngrams
-        self.special_tokens = special_tokens
-        self.inverted_vocab = dict(zip(vocab.values(), vocab.keys()))
+        self.word_representation = self.__compute_representations(num_embeddings, vocab,
+                                                                  ngrams, special_tokens)
 
-    def _compute_representation(self, token: str) -> List[str]:
+    @staticmethod
+    def __compute_subwords(token: str, vocab, ngrams, special_tokens):
+        if len(token) <= ngrams or token in special_tokens:
+            return []
+        return [vocab.get(token[t:t + ngrams]) for t in range(len(token) - ngrams + 1) if
+                vocab.get(token[t:t + ngrams]) is not None]
+
+    def __compute_representations(self, num_embeddings, vocab, ngrams, special_tokens):
         """
 
         Each word w is represented as a bag of character n-gram.
@@ -31,34 +36,24 @@ class FasttextEmbedding(torch.nn.EmbeddingBag):
         Taking the word where and n = 3 as an example, it will be represented by the character n-grams:
         <wh, whe, her, ere, re>, <where>
 
-        :param token:
         :return:
         """
-        if len(token) <= self.ngrams or token in self.special_tokens:
-            return [token]
-        return [token[t:t + self.ngrams] for t in range(len(token) - self.ngrams + 1)] + [token]
 
-    def _encode(self, tokens: List[List[str]], pad: bool = True) -> List[List[str]]:
-        """
-
-        :param tokens:
-        :param pad:
-        :return:
-        """
-        encoded_input = []
-        for word_list in tokens:
-            encoded_input.append([self.vocab[w] for w in word_list if self.vocab.get(w) is not None])
-        if pad:
-            max_length = len(max(encoded_input, key=lambda x: len(x)))
-            for word_list in encoded_input:
-                word_list.extend([self.padding_idx] * (max_length - len(word_list)))
-        return encoded_input
+        reps = [(v, set([v] + self.__compute_subwords(k, vocab, ngrams, special_tokens))) for k, v in vocab.items()]
+        max_length = len(max(reps, key=lambda x: len(x[1]))[1])
+        word_representation = torch.empty((num_embeddings, max_length), dtype=torch.long)
+        torch.nn.init.constant_(word_representation, self.padding_idx)
+        for k, v in reps:
+            word_representation[k, :len(v)] = torch.LongTensor(list(v))
+        return word_representation
 
     def forward(self, input: Tensor, offsets: Optional[Tensor] = None,
                 per_sample_weights: Optional[Tensor] = None) -> Tensor:
-        tokens = [self._compute_representation(self.inverted_vocab[i.cpu().item()]) for i in input.flatten()]
-        tokens = torch.tensor(self._encode(tokens), dtype=input.dtype).to(input.device)
-        return super().forward(tokens)
+        # TODO fix word_representation device
+        self.word_representation = self.word_representation.to(input.device)
+
+        tokens = self.word_representation[input].reshape((-1, self.word_representation.shape[1]))
+        return super().forward(tokens, offsets, per_sample_weights)
 
 
 class FasttextModel(torch.nn.Module):
@@ -115,4 +110,4 @@ class FasttextModel(torch.nn.Module):
             negative_samples = self.context_embedding(
                 torch.randint(0, self.num_embeddings, labels.shape + (n_samples,), device=input_ids.device))
             loss = self.binary_logistic_loss(word, context, negative_samples)
-        return (word, loss)
+        return word, loss

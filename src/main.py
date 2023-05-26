@@ -15,7 +15,7 @@ inputs = tokenizer.batch_encode_plus([
     "Hello world! How are you all, my friends?",
     "This is a brand new world my dear friend"
 ], padding=True, return_tensors="pt")
-
 labels = model.compute_context(inputs["input_ids"])
+model.requires_grad_(True)
 model(inputs["input_ids"], labels)
 print()
