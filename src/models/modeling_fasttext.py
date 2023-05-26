@@ -91,12 +91,14 @@ class FasttextModel(torch.nn.Module):
             input_ids.device)
 
     def binary_logistic_loss(self, word, context, negative_samples):
+        # TODO device better normalization strategy and bring out the scoring
+
         word = word.reshape((-1, 1, self.embedding_dim))
         positive_scores = word.bmm(context.reshape((-1, 10, self.embedding_dim)).transpose(1, 2)).reshape(
-            context.shape[:3])
+            context.shape[:3]).normal_()
         negative_scores = word.bmm(
             negative_samples.reshape((word.shape[0], -1, self.embedding_dim)).transpose(1, 2)).reshape(
-            negative_samples.shape[:4])
+            negative_samples.shape[:4]).normal_()
         loss = torch.log(1 + torch.e ** (-positive_scores)) + torch.log(1 + torch.e ** (negative_scores.sum(dim=-1)))
         return loss.mean()
 
