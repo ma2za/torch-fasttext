@@ -64,8 +64,11 @@ class FasttextEmbedding(torch.nn.EmbeddingBag):
 class FasttextModel(torch.nn.Module):
 
     def __init__(self, num_embeddings: int, embedding_dim: int, vocab: dict, ngrams: int,
-                 special_tokens: list, pad_token_id: int, **kwargs):
+                 special_tokens: list, pad_token_id: int, context_size: int, **kwargs):
         super().__init__(**kwargs)
+        self.embedding_dim = embedding_dim
+        self.num_embeddings = num_embeddings
+        self.context_size = context_size
         self.word_embedding = FasttextEmbedding(num_embeddings=num_embeddings,
                                                 embedding_dim=embedding_dim,
                                                 vocab=vocab,
@@ -77,24 +80,36 @@ class FasttextModel(torch.nn.Module):
                                                     embedding_dim=embedding_dim,
                                                     padding_idx=pad_token_id)
 
-    def compute_context(self, input_ids: torch.LongTensor, context_size: int):
+    def compute_context(self, input_ids: torch.LongTensor):
         return torch.cat([
             torch.cat(
-                (torch.ones((input_ids.shape[0], max(context_size - i, 0)),
+                (torch.ones((input_ids.shape[0], max(self.context_size - i, 0)),
                             dtype=torch.long) * self.context_embedding.padding_idx,
-                 input_ids[:, max(i - context_size, 0):i],
-                 input_ids[:, i + 1:i + 1 + context_size],
-                 torch.ones((input_ids.shape[0], max(i - input_ids.shape[1] + context_size + 1,
+                 input_ids[:, max(i - self.context_size, 0):i],
+                 input_ids[:, i + 1:i + 1 + self.context_size],
+                 torch.ones((input_ids.shape[0], max(i - input_ids.shape[1] + self.context_size + 1,
                                                      0)), dtype=torch.long) * self.context_embedding.padding_idx),
                 dim=1) for
             i in
-            range(input_ids.shape[1])])
+            range(input_ids.shape[1])], dim=1).reshape((input_ids.shape[0], input_ids.shape[1], -1))
+
+    def binary_logistic_loss(self, word, context, negative_samples):
+        word = word.reshape((-1, 1, self.embedding_dim))
+        positive_scores = word.bmm(context.reshape((-1, 10, self.embedding_dim)).transpose(1, 2)).reshape(
+            context.shape[:3])
+        negative_scores = word.bmm(
+            negative_samples.reshape((word.shape[0], -1, self.embedding_dim)).transpose(1, 2)).reshape(
+            negative_samples.shape[:4])
+        loss = torch.log(1 + torch.e ** (-positive_scores)) + torch.log(1 + torch.e ** (negative_scores.sum(dim=-1)))
+        return loss.sum()
 
     def forward(self, input_ids: torch.LongTensor,
-                labels: Optional[torch.LongTensor] = None):
+                labels: Optional[torch.LongTensor] = None,
+                n_samples: int = 5):
         word = self.word_embedding(input_ids).reshape((input_ids.shape[0], input_ids.shape[1], -1))
+        loss = None
         if labels is not None:
             context = self.context_embedding(labels)
-
-        # TODO implement loss
-        return word
+            negative_samples = self.context_embedding(torch.randint(0, 3, labels.shape + (n_samples,)))
+            loss = self.binary_logistic_loss(word, context, negative_samples)
+        return (word, loss)
