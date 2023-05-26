@@ -5,7 +5,7 @@ from src.models.modeling_fasttext import FasttextModel
 tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
 model = FasttextModel(
     num_embeddings=tokenizer.backend_tokenizer.get_vocab_size(with_added_tokens=True),
-    embedding_dim=4,
+    embedding_dim=512,
     vocab=tokenizer.backend_tokenizer.get_vocab(with_added_tokens=True),
     ngrams=3,
     special_tokens=tokenizer.all_special_tokens,

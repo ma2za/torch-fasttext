@@ -84,14 +84,16 @@ class FasttextModel(torch.nn.Module):
         return torch.cat([
             torch.cat(
                 (torch.ones((input_ids.shape[0], max(self.context_size - i, 0)),
-                            dtype=torch.long) * self.context_embedding.padding_idx,
-                 input_ids[:, max(i - self.context_size, 0):i],
-                 input_ids[:, i + 1:i + 1 + self.context_size],
+                            dtype=torch.long, device=input_ids.device) * self.context_embedding.padding_idx,
+                 input_ids[:, max(i - self.context_size, 0):i].to(input_ids.device),
+                 input_ids[:, i + 1:i + 1 + self.context_size].to(input_ids.device),
                  torch.ones((input_ids.shape[0], max(i - input_ids.shape[1] + self.context_size + 1,
-                                                     0)), dtype=torch.long) * self.context_embedding.padding_idx),
+                                                     0)), dtype=torch.long,
+                            device=input_ids.device) * self.context_embedding.padding_idx),
                 dim=1) for
             i in
-            range(input_ids.shape[1])], dim=1).reshape((input_ids.shape[0], input_ids.shape[1], -1))
+            range(input_ids.shape[1])], dim=1).reshape((input_ids.shape[0], input_ids.shape[1], -1)).to(
+            input_ids.device)
 
     def binary_logistic_loss(self, word, context, negative_samples):
         word = word.reshape((-1, 1, self.embedding_dim))
@@ -110,6 +112,7 @@ class FasttextModel(torch.nn.Module):
         loss = None
         if labels is not None:
             context = self.context_embedding(labels)
-            negative_samples = self.context_embedding(torch.randint(0, 3, labels.shape + (n_samples,)))
+            negative_samples = self.context_embedding(
+                torch.randint(0, self.num_embeddings, labels.shape + (n_samples,), device=input_ids.device))
             loss = self.binary_logistic_loss(word, context, negative_samples)
         return (word, loss)
