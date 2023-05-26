@@ -1,3 +1,4 @@
+import torch
 from transformers import RobertaTokenizerFast
 
 from src.models.modeling_fasttext import FasttextModel
@@ -11,6 +12,10 @@ model = FasttextModel(
     special_tokens=tokenizer.all_special_tokens,
     pad_token_id=tokenizer.pad_token_id,
     context_size=5)
+
+torch.nn.init.xavier_normal_(model.word_embedding.weight)
+torch.nn.init.xavier_normal_(model.context_embedding.weight)
+
 inputs = tokenizer.batch_encode_plus([
     "Hello world! How are you all, my friends?",
     "This is a brand new world my dear friend"

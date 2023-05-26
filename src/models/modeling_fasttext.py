@@ -98,7 +98,7 @@ class FasttextModel(torch.nn.Module):
             negative_samples.reshape((word.shape[0], -1, self.embedding_dim)).transpose(1, 2)).reshape(
             negative_samples.shape[:4])
         loss = torch.log(1 + torch.e ** (-positive_scores)) + torch.log(1 + torch.e ** (negative_scores.sum(dim=-1)))
-        return loss.sum()
+        return loss.mean()
 
     def forward(self, input_ids: torch.LongTensor,
                 labels: Optional[torch.LongTensor] = None,
