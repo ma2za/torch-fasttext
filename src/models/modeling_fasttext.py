@@ -1,7 +1,7 @@
 from typing import Optional
 
 import torch
-from torch import Tensor, nn
+from torch import Tensor
 from torch.nn import init
 
 
@@ -17,7 +17,6 @@ class FasttextEmbedding(torch.nn.EmbeddingBag):
                          **kwargs)
         self.word_representation = self.__compute_representations(num_embeddings, vocab,
                                                                   ngrams, special_tokens)
-        self.word_layer_norm = nn.LayerNorm(embedding_dim, eps=1e-05)
 
     @staticmethod
     def __compute_subwords(token: str, vocab, ngrams, special_tokens):
@@ -55,8 +54,7 @@ class FasttextEmbedding(torch.nn.EmbeddingBag):
         self.word_representation = self.word_representation.to(input.device)
 
         tokens = self.word_representation[input].reshape((-1, self.word_representation.shape[1]))
-        base_embeddings = super().forward(tokens, offsets, per_sample_weights)
-        return self.word_layer_norm(base_embeddings)
+        return super().forward(tokens, offsets, per_sample_weights)
 
 
 class FasttextModel(torch.nn.Module):
@@ -73,11 +71,12 @@ class FasttextModel(torch.nn.Module):
                                                 ngrams=ngrams,
                                                 special_tokens=special_tokens,
                                                 pad_token_id=pad_token_id,
+                                                max_norm=1,
                                                 **kwargs)
         self.context_embedding = torch.nn.Embedding(num_embeddings=num_embeddings,
                                                     embedding_dim=embedding_dim,
-                                                    padding_idx=pad_token_id)
-        self.context_layer_norm = nn.LayerNorm(embedding_dim, eps=1e-05)
+                                                    padding_idx=pad_token_id,
+                                                    max_norm=1)
         self._init_embeddings()
 
     def _init_embeddings(self):
@@ -119,7 +118,6 @@ class FasttextModel(torch.nn.Module):
         loss = None
         if labels is not None:
             context = self.context_embedding(labels)
-            context = self.context_layer_norm(context)
             negative_samples = self.context_embedding(
                 torch.randint(0, self.num_embeddings, labels.shape + (n_samples,), device=input_ids.device))
             loss = self.binary_logistic_loss(word, context, negative_samples)

@@ -18,5 +18,5 @@ inputs = tokenizer.batch_encode_plus([
 ], padding=True, return_tensors="pt")
 labels = model.compute_context(inputs["input_ids"])
 model.requires_grad_(True)
-model(inputs["input_ids"], labels)
+_, loss = model(inputs["input_ids"], labels)
 print()
