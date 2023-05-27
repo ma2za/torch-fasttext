@@ -2,6 +2,7 @@ from typing import Optional
 
 import torch
 from torch import Tensor, nn
+from torch.nn import init
 
 
 class FasttextEmbedding(torch.nn.EmbeddingBag):
@@ -80,8 +81,8 @@ class FasttextModel(torch.nn.Module):
         self._init_embeddings()
 
     def _init_embeddings(self):
-        # init.xavier_normal_(self.word_embedding.weight)
-        # init.xavier_normal_(self.context_embedding.weight)
+        init.xavier_normal_(self.word_embedding.weight)
+        init.xavier_normal_(self.context_embedding.weight)
         with torch.no_grad():
             self.context_embedding.weight[self.context_embedding.padding_idx].fill_(0)
             self.word_embedding.weight[self.context_embedding.padding_idx].fill_(0)
