@@ -1,3 +1,4 @@
+from torch.optim import AdamW
 from transformers import RobertaTokenizerFast
 
 from src.models.modeling_fasttext import FasttextModel
@@ -17,6 +18,17 @@ inputs = tokenizer.batch_encode_plus([
     "This is a brand new world my dear friend"
 ], padding=True, return_tensors="pt")
 labels = model.compute_context(inputs["input_ids"])
-model.requires_grad_(True)
-_, loss = model(inputs["input_ids"], labels)
+optimizer = AdamW(model.parameters(),
+                  lr=0.01,
+                  betas=(0.9, 0.999),
+                  eps=1e-08,
+                  weight_decay=0.00)
+model.train()
+for i in range(100000):
+    model.zero_grad()
+    _, loss = model(inputs["input_ids"], labels)
+    print(loss)
+    loss.backward()
+    optimizer.step()
+
 print()

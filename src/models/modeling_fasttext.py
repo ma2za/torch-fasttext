@@ -77,11 +77,13 @@ class FasttextModel(torch.nn.Module):
                                                     embedding_dim=embedding_dim,
                                                     padding_idx=pad_token_id,
                                                     max_norm=1)
+
+        self.act = torch.nn.LogSigmoid()
         self._init_embeddings()
 
     def _init_embeddings(self):
-        init.xavier_normal_(self.word_embedding.weight)
-        init.xavier_normal_(self.context_embedding.weight)
+        for param in self.parameters():
+            init.xavier_normal_(param)
         with torch.no_grad():
             self.context_embedding.weight[self.context_embedding.padding_idx].fill_(0)
             self.word_embedding.weight[self.context_embedding.padding_idx].fill_(0)
@@ -101,14 +103,16 @@ class FasttextModel(torch.nn.Module):
             range(input_ids.shape[1])], dim=1).reshape((input_ids.shape[0], input_ids.shape[1], -1)).to(
             input_ids.device)
 
+    def score(self, query, keys):
+        query = query.reshape((-1, 1, self.embedding_dim))
+        keys = keys.reshape((query.shape[0], -1, self.embedding_dim))
+        scores = query.bmm(keys.transpose(1, 2))
+        return scores.reshape(keys.shape[:-1])
+
     def binary_logistic_loss(self, word, context, negative_samples):
-        word = word.reshape((-1, 1, self.embedding_dim))
-        positive_scores = word.bmm(context.reshape((-1, 10, self.embedding_dim)).transpose(1, 2)).reshape(
-            context.shape[:3])
-        negative_scores = word.bmm(
-            negative_samples.reshape((word.shape[0], -1, self.embedding_dim)).transpose(1, 2)).reshape(
-            negative_samples.shape[:4])
-        loss = torch.log(1 + torch.e ** (-positive_scores)) + torch.log(1 + torch.e ** (negative_scores.sum(dim=-1)))
+        positive_scores = self.score(word, context)
+        negative_scores = self.score(word, negative_samples).sum(dim=-1)
+        loss = -self.act(positive_scores) - self.act(-negative_scores)
         return loss.mean()
 
     def forward(self, input_ids: torch.LongTensor,
@@ -119,6 +123,7 @@ class FasttextModel(torch.nn.Module):
         if labels is not None:
             context = self.context_embedding(labels)
             negative_samples = self.context_embedding(
-                torch.randint(0, self.num_embeddings, labels.shape + (n_samples,), device=input_ids.device))
+                torch.randint(0, self.num_embeddings, labels.shape + (n_samples,),
+                              device=input_ids.device))
             loss = self.binary_logistic_loss(word, context, negative_samples)
         return word, loss
