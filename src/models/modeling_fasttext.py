@@ -2,6 +2,7 @@ from typing import Optional
 
 import torch
 from torch import Tensor
+from torch.nn import init
 
 
 class FasttextEmbedding(torch.nn.EmbeddingBag):
@@ -70,10 +71,20 @@ class FasttextModel(torch.nn.Module):
                                                 ngrams=ngrams,
                                                 special_tokens=special_tokens,
                                                 pad_token_id=pad_token_id,
+                                                max_norm=1,
                                                 **kwargs)
         self.context_embedding = torch.nn.Embedding(num_embeddings=num_embeddings,
                                                     embedding_dim=embedding_dim,
-                                                    padding_idx=pad_token_id)
+                                                    padding_idx=pad_token_id,
+                                                    max_norm=1)
+        self._init_embeddings()
+
+    def _init_embeddings(self):
+        init.xavier_normal_(self.word_embedding.weight)
+        init.xavier_normal_(self.context_embedding.weight)
+        with torch.no_grad():
+            self.context_embedding.weight[self.context_embedding.padding_idx].fill_(0)
+            self.word_embedding.weight[self.context_embedding.padding_idx].fill_(0)
 
     def compute_context(self, input_ids: torch.LongTensor):
         return torch.cat([
@@ -91,14 +102,12 @@ class FasttextModel(torch.nn.Module):
             input_ids.device)
 
     def binary_logistic_loss(self, word, context, negative_samples):
-        # TODO device better normalization strategy and bring out the scoring
-
         word = word.reshape((-1, 1, self.embedding_dim))
         positive_scores = word.bmm(context.reshape((-1, 10, self.embedding_dim)).transpose(1, 2)).reshape(
-            context.shape[:3]).normal_()
+            context.shape[:3])
         negative_scores = word.bmm(
             negative_samples.reshape((word.shape[0], -1, self.embedding_dim)).transpose(1, 2)).reshape(
-            negative_samples.shape[:4]).normal_()
+            negative_samples.shape[:4])
         loss = torch.log(1 + torch.e ** (-positive_scores)) + torch.log(1 + torch.e ** (negative_scores.sum(dim=-1)))
         return loss.mean()
 
