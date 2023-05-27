@@ -105,8 +105,7 @@ class FasttextModel(torch.nn.Module):
 
     def score(self, query, keys):
         query = query.reshape((-1, 1, self.embedding_dim))
-        keys = keys.reshape((query.shape[0], -1, self.embedding_dim))
-        scores = query.bmm(keys.transpose(1, 2))
+        scores = query.bmm(keys.reshape((query.shape[0], -1, self.embedding_dim)).transpose(1, 2))
         return scores.reshape(keys.shape[:-1])
 
     def binary_logistic_loss(self, word, context, negative_samples):
@@ -123,7 +122,6 @@ class FasttextModel(torch.nn.Module):
         if labels is not None:
             context = self.context_embedding(labels)
             negative_samples = self.context_embedding(
-                torch.randint(0, self.num_embeddings, labels.shape + (n_samples,),
-                              device=input_ids.device))
+                torch.randint(0, self.num_embeddings, labels.shape + (n_samples,), device=input_ids.device))
             loss = self.binary_logistic_loss(word, context, negative_samples)
         return word, loss
