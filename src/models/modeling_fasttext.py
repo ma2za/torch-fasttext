@@ -1,8 +1,7 @@
 from typing import Optional
 
 import torch
-from torch import Tensor
-from torch.nn import init
+from torch import Tensor, nn
 
 
 class FasttextEmbedding(torch.nn.EmbeddingBag):
@@ -17,6 +16,7 @@ class FasttextEmbedding(torch.nn.EmbeddingBag):
                          **kwargs)
         self.word_representation = self.__compute_representations(num_embeddings, vocab,
                                                                   ngrams, special_tokens)
+        self.word_layer_norm = nn.LayerNorm(embedding_dim, eps=1e-05)
 
     @staticmethod
     def __compute_subwords(token: str, vocab, ngrams, special_tokens):
@@ -54,7 +54,8 @@ class FasttextEmbedding(torch.nn.EmbeddingBag):
         self.word_representation = self.word_representation.to(input.device)
 
         tokens = self.word_representation[input].reshape((-1, self.word_representation.shape[1]))
-        return super().forward(tokens, offsets, per_sample_weights)
+        base_embeddings = super().forward(tokens, offsets, per_sample_weights)
+        return self.word_layer_norm(base_embeddings)
 
 
 class FasttextModel(torch.nn.Module):
@@ -71,17 +72,16 @@ class FasttextModel(torch.nn.Module):
                                                 ngrams=ngrams,
                                                 special_tokens=special_tokens,
                                                 pad_token_id=pad_token_id,
-                                                max_norm=1,
                                                 **kwargs)
         self.context_embedding = torch.nn.Embedding(num_embeddings=num_embeddings,
                                                     embedding_dim=embedding_dim,
-                                                    padding_idx=pad_token_id,
-                                                    max_norm=1)
+                                                    padding_idx=pad_token_id)
+        self.context_layer_norm = nn.LayerNorm(embedding_dim, eps=1e-05)
         self._init_embeddings()
 
     def _init_embeddings(self):
-        init.xavier_normal_(self.word_embedding.weight)
-        init.xavier_normal_(self.context_embedding.weight)
+        # init.xavier_normal_(self.word_embedding.weight)
+        # init.xavier_normal_(self.context_embedding.weight)
         with torch.no_grad():
             self.context_embedding.weight[self.context_embedding.padding_idx].fill_(0)
             self.word_embedding.weight[self.context_embedding.padding_idx].fill_(0)
@@ -118,6 +118,7 @@ class FasttextModel(torch.nn.Module):
         loss = None
         if labels is not None:
             context = self.context_embedding(labels)
+            context = self.context_layer_norm(context)
             negative_samples = self.context_embedding(
                 torch.randint(0, self.num_embeddings, labels.shape + (n_samples,), device=input_ids.device))
             loss = self.binary_logistic_loss(word, context, negative_samples)
