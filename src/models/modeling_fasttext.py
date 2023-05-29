@@ -3,6 +3,7 @@ from typing import Optional
 
 import torch
 from torch import Tensor
+from torch.nn import functional as F
 
 
 class FasttextEmbedding(torch.nn.Module):
@@ -68,14 +69,14 @@ class FasttextEmbedding(torch.nn.Module):
             word_representation[k, :len(v)] = torch.LongTensor(list(v))
         return word_representation
 
-    def forward(self, input: Tensor) -> Tensor:
+    def forward(self, input_ids: Tensor) -> Tensor:
         # TODO fix word_representation device
         if self.reduce:
-            self.word_representation = self.word_representation.to(input.device)
+            self.word_representation = self.word_representation.to(input_ids.device)
 
-            tokens = self.word_representation[input].reshape((-1, self.word_representation.shape[1]))
+            tokens = self.word_representation[input_ids].reshape((-1, self.word_representation.shape[1]))
         else:
-            tokens = input
+            tokens = input_ids
         embedding = self.weight(tokens)
         return embedding.sum(dim=1) if self.reduce else embedding
 
@@ -83,8 +84,8 @@ class FasttextEmbedding(torch.nn.Module):
 class FasttextModel(torch.nn.Module):
 
     def __init__(self, num_embeddings: int, embedding_dim: int, vocab: dict, ngrams: int,
-                 special_tokens: list, pad_token_id: int, context_size: int, **kwargs):
-        super().__init__(**kwargs)
+                 special_tokens: list, pad_token_id: int, context_size: int):
+        super().__init__()
         self.embedding_dim = embedding_dim
         self.num_embeddings = num_embeddings
         self.context_size = context_size
@@ -99,8 +100,6 @@ class FasttextModel(torch.nn.Module):
                                                    embedding_dim=embedding_dim,
                                                    pad_token_id=pad_token_id,
                                                    reduce=False)
-
-        self.act = torch.nn.LogSigmoid()
 
     def compute_context(self, input_ids: torch.LongTensor):
         return torch.cat([
@@ -126,7 +125,7 @@ class FasttextModel(torch.nn.Module):
         mask = inputs_mask.unsqueeze(2) * labels_mask
         positive_scores = self.score(word, context)
         negative_scores = self.score(word, negative_samples).sum(dim=-1)
-        loss = (-self.act(positive_scores) - self.act(-negative_scores)) * mask
+        loss = (-F.logsigmoid(positive_scores) - F.logsigmoid(-negative_scores)) * mask
         return loss.sum() / mask.sum()
 
     def forward(self, input_ids: torch.LongTensor,
