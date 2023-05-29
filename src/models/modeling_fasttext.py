@@ -113,7 +113,7 @@ class FasttextModel(torch.nn.Module):
         positive_scores = self.score(word, context)
         negative_scores = self.score(word, negative_samples).sum(dim=-1)
         loss = (-self.act(positive_scores) - self.act(-negative_scores)) * mask
-        return loss.mean()
+        return loss.sum() / mask.sum()
 
     def forward(self, input_ids: torch.LongTensor,
                 labels: Optional[torch.LongTensor] = None,

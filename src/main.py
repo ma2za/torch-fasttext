@@ -1,4 +1,6 @@
+from datasets import load_dataset
 from torch.optim import AdamW
+from torch.utils.data import DataLoader
 from transformers import RobertaTokenizerFast
 
 from src.models.modeling_fasttext import FasttextModel
@@ -13,20 +15,22 @@ model = FasttextModel(
     pad_token_id=tokenizer.pad_token_id,
     context_size=5)
 
-inputs = tokenizer.batch_encode_plus([
-    "Hello world! How are you all, my friends?",
-    "This is a brand new world my dear friend"
-], padding=True, return_tensors="pt")
-labels = model.compute_context(inputs["input_ids"])
+dataset = load_dataset("emotion")
+
 optimizer = AdamW(model.parameters(),
                   lr=0.01,
                   betas=(0.9, 0.999),
                   eps=1e-08,
                   weight_decay=0.00)
 model.train()
-for i in range(100000):
-    model.zero_grad()
-    _, loss = model(inputs["input_ids"], labels)
+
+dataloader = DataLoader(dataset["train"], batch_size=4, shuffle=False)
+
+for batch in dataloader:
+    optimizer.zero_grad()
+    batch = tokenizer(batch["text"], truncation=True, padding=True, max_length=30, return_tensors="pt")
+    labels = model.compute_context(batch["input_ids"])
+    _, loss = model(batch["input_ids"], labels)
     print(loss)
     loss.backward()
     optimizer.step()
